@@ -18,9 +18,9 @@ const GAME_HEIGHT = 600;
 const GAME_WIDTH = 400;
 const BIRD_SIZE = 30;
 const PIPE_WIDTH = 60;
-const PIPE_GAP = 170;
+const PIPE_GAP = 200;
 const GRAVITY = 0.5;
-const JUMP_FORCE = -7;
+const JUMP_FORCE = -8;
 const PIPE_SPEED = 3;
 
 function App() {
