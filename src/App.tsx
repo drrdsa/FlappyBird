@@ -16,18 +16,17 @@ interface Pipe {
 
 const GAME_HEIGHT = 600;
 const GAME_WIDTH = 400;
-const BIRD_SIZE = 25;
+const BIRD_SIZE = 25; // Assuming bird is roughly square, adjust if using w/h from styles
 const PIPE_WIDTH = 60;
 const PIPE_GAP = 130;
 const GRAVITY = 0.5;
 const JUMP_FORCE = -7;
 const PIPE_SPEED = 3;
-const MIN_PIPE_Y_MARGIN = 50; // Min space from top/bottom of screen for the pipe body itself,
-                              // ensuring the gap is not right at the edge.
-const MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE = 100; // Max change in topHeight of consecutive pipes.
-                                                 // This limits how much higher or lower the next pipe can be.
-                                                 // Adjust this value to tune difficulty.
-const HORIZONTAL_PIPE_SPACING = 200; // Current logic: new pipe if last pipe x < GAME_WIDTH - 200
+
+// --- NEW CONSTANTS FOR PIPE GENERATION ---
+const MIN_PIPE_Y_MARGIN = 50; // Min space from top/bottom of screen for the pipe body itself
+const MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE = 100; // Max change in topHeight of consecutive pipes
+const HORIZONTAL_PIPE_SPACING = 200; // Horizontal distance between pipe generation triggers
 
 function App() {
   const [bird, setBird] = useState<Bird>({ x: 100, y: 300, velocity: 0 });
@@ -42,7 +41,7 @@ function App() {
     setPipes([]);
     setScore(0);
     setGameOver(false);
-    setGameStarted(false);
+    setGameStarted(false); // Ensure gameStarted is reset
   }, []);
 
   const jump = useCallback(() => {
@@ -52,73 +51,47 @@ function App() {
     if (!gameOver) {
       setBird(prev => ({ ...prev, velocity: JUMP_FORCE }));
     } else {
-      resetGame();
+      resetGame(); // This will set gameStarted to false
+      // If you want to immediately start after reset, you'd setGameStarted(true) here or in a setTimeout
     }
   }, [gameStarted, gameOver, resetGame]);
 
-  // SIMPLE AND EFFECTIVE AI - Back to basics but improved
   const shouldAIJump = useCallback((currentBird: Bird, currentPipes: Pipe[]) => {
-    // Emergency ground avoidance
     if (currentBird.y > GAME_HEIGHT - BIRD_SIZE - 30) {
       return true;
     }
-
-    // No pipes yet - stay in middle
     if (currentPipes.length === 0) {
       return currentBird.y > GAME_HEIGHT * 0.6;
     }
-
-    // Find the next pipe we need to go through
-    const nextPipe = currentPipes.find(pipe => 
-      pipe.x + PIPE_WIDTH > currentBird.x
-    );
-    
+    const nextPipe = currentPipes.find(pipe => pipe.x + PIPE_WIDTH > currentBird.x);
     if (!nextPipe) {
-      // No pipes ahead - maintain safe height
       return currentBird.y > GAME_HEIGHT * 0.2;
     }
-
     const distanceToPipe = nextPipe.x - currentBird.x;
     const gapCenter = nextPipe.topHeight + (PIPE_GAP / 2);
-
-    // Simple prediction: where will we be in a few frames?
     const framesToPipe = Math.max(1, distanceToPipe / PIPE_SPEED);
     const predictedY = currentBird.y + (currentBird.velocity * Math.min(framesToPipe, 10));
 
-    // CORE LOGIC: Simple and reliable
     if (distanceToPipe > 5) {
-      // Far from pipe - get into good position
-      const targetY = gapCenter - 20; // Aim slightly above center
+      const targetY = gapCenter - 20;
       return currentBird.y > targetY + 40;
     } else {
-      // Close to pipe - make precise decisions
-      
-      // If we're going to hit the bottom pipe, jump
       if (predictedY > nextPipe.bottomY - BIRD_SIZE - 15) {
         return true;
       }
-      
-      // If we're going to hit the top pipe, don't jump (let gravity help)
       if (predictedY < nextPipe.topHeight + 15) {
         return false;
       }
-      
-      // In the safe zone - only jump if we're below center and falling
       if (currentBird.y > gapCenter + 10 && currentBird.velocity > 2) {
         return true;
       }
-      
-      // If we're above center, let gravity bring us down
       if (currentBird.y < gapCenter - 10) {
         return false;
       }
-      
-      // Default: jump if we're getting too low
       return currentBird.y > gapCenter + 30;
     }
   }, []);
 
-  // Handle keyboard input
   useEffect(() => {
     const handleKeyPress = (e: KeyboardEvent) => {
       if (e.code === 'Space' || e.code === 'ArrowUp') {
@@ -128,7 +101,6 @@ function App() {
         }
       }
     };
-
     window.addEventListener('keydown', handleKeyPress);
     return () => window.removeEventListener('keydown', handleKeyPress);
   }, [jump, aiMode]);
@@ -137,193 +109,170 @@ function App() {
   useEffect(() => {
     if (!gameStarted || gameOver) return;
 
-    const gameLoop = setInterval(() => {
+    const gameLoopInterval = setInterval(() => {
       // Update bird
       setBird(prev => {
         const newY = prev.y + prev.velocity;
         const newVelocity = prev.velocity + GRAVITY;
-
-        // Check ground and ceiling collision
         if (newY > GAME_HEIGHT - BIRD_SIZE || newY < 0) {
           setGameOver(true);
           return prev;
         }
-
         return { ...prev, y: newY, velocity: newVelocity };
       });
 
-      // Update pipes
-      setPipes(prev => {
-        let newPipes = prev.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
+      // Update pipes - MODIFIED SECTION
+      setPipes(prevPipes => {
+        let newPipesArray = prevPipes.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
+        newPipesArray = newPipesArray.filter(pipe => pipe.x > -PIPE_WIDTH);
         
-        // Remove pipes that are off screen
-        newPipes = newPipes.filter(pipe => pipe.x > -PIPE_WIDTH);
-        
-        setPipes(prevPipes => {
-        let newPipes = prevPipes.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
-        
-        newPipes = newPipes.filter(pipe => pipe.x > -PIPE_WIDTH);
-        
-        // Add new pipe if needed
-        if (newPipes.length === 0 || newPipes[newPipes.length - 1].x < GAME_WIDTH - HORIZONTAL_PIPE_SPACING) {
+        if (newPipesArray.length === 0 || newPipesArray[newPipesArray.length - 1].x < GAME_WIDTH - HORIZONTAL_PIPE_SPACING) {
           let newTopHeight;
 
-          // Define the absolute boundaries for any pipe's topHeight
           const absoluteMinTopHeight = MIN_PIPE_Y_MARGIN;
           const absoluteMaxTopHeight = GAME_HEIGHT - PIPE_GAP - MIN_PIPE_Y_MARGIN;
 
-          if (newPipes.length === 0) {
-            // For the first pipe, generate its topHeight randomly within the absolute allowed range.
-            // You might want to bias this towards the center for a gentler start.
-            // Example: const midPoint = (absoluteMinTopHeight + absoluteMaxTopHeight) / 2;
-            // newTopHeight = midPoint + (Math.random() - 0.5) * (absoluteMaxTopHeight - absoluteMinTopHeight) * 0.5; // Center-biased
+          if (newPipesArray.length === 0) {
+            // For the first pipe, generate its topHeight somewhat centrally or fully random.
+            // newTopHeight = (absoluteMinTopHeight + absoluteMaxTopHeight) / 2; // Center start
             newTopHeight = Math.random() * (absoluteMaxTopHeight - absoluteMinTopHeight) + absoluteMinTopHeight;
-
           } else {
-            const lastPipe = newPipes[newPipes.length - 1];
+            const lastPipe = newPipesArray[newPipesArray.length - 1];
             const lastTopHeight = lastPipe.topHeight;
 
-            // Determine the min/max topHeight for the new pipe based on the last pipe
             const minNextTopHeightBasedOnLast = lastTopHeight - MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE;
             const maxNextTopHeightBasedOnLast = lastTopHeight + MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE;
 
-            // The new topHeight must be within BOTH the absolute limits AND the relative limits from the last pipe
             const effectiveMinTopHeight = Math.max(absoluteMinTopHeight, minNextTopHeightBasedOnLast);
             const effectiveMaxTopHeight = Math.min(absoluteMaxTopHeight, maxNextTopHeightBasedOnLast);
             
-            // Generate the new topHeight within the calculated effective range
-            // If effectiveMinTopHeight > effectiveMaxTopHeight (can happen if constraints are very tight,
-            // or MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE is small and last pipe was at an extreme),
-            // then newTopHeight will be effectively clamped to one of the boundaries.
-            // Math.random() * (negative_number) would be NaN, so ensure the range is non-negative.
             if (effectiveMinTopHeight >= effectiveMaxTopHeight) {
-                newTopHeight = effectiveMinTopHeight; // Or effectiveMaxTopHeight, they are equal or crossed
+                newTopHeight = effectiveMinTopHeight; 
             } else {
                 newTopHeight = Math.random() * (effectiveMaxTopHeight - effectiveMinTopHeight) + effectiveMinTopHeight;
             }
           }
           
-          // Ensure newTopHeight is a valid number (e.g. not NaN if ranges were problematic)
-          // and clamped to the absolute possible values just in case.
           newTopHeight = Math.max(absoluteMinTopHeight, Math.min(newTopHeight, absoluteMaxTopHeight));
-          if (isNaN(newTopHeight)) { // Fallback if something went wrong
+          if (isNaN(newTopHeight)) { 
             newTopHeight = (absoluteMinTopHeight + absoluteMaxTopHeight) / 2;
           }
 
-
-          newPipes.push({
+          newPipesArray.push({
             x: GAME_WIDTH,
-            topHeight: Math.floor(newTopHeight), // Use Math.floor for integer pixel values
+            topHeight: Math.floor(newTopHeight),
             bottomY: Math.floor(newTopHeight) + PIPE_GAP,
             passed: false
           });
         }
-
-        return newPipes;
+        return newPipesArray;
       });
-    }, 1000 / 60); // 60 FPS
+    }, 1000 / 60);
 
-    return () => clearInterval(gameLoop);
+    return () => clearInterval(gameLoopInterval);
   }, [gameStarted, gameOver]);
 
-  // AI Decision Making - Balanced frequency
+  // AI Decision Making
   useEffect(() => {
     if (!aiMode || !gameStarted || gameOver) return;
-
-    const aiLoop = setInterval(() => {
+    const aiLoopInterval = setInterval(() => {
       setBird(currentBird => {
-        setPipes(currentPipes => {
+        setPipes(currentPipes => { // AI needs currentPipes for decision
           if (shouldAIJump(currentBird, currentPipes)) {
-            setBird(prev => ({ ...prev, velocity: JUMP_FORCE }));
+            // Directly update bird state if AI jumps
+            // This avoids stale closure issues with setBird from outer scope
+            setBird(b => ({ ...b, velocity: JUMP_FORCE }));
           }
-          return currentPipes;
+          return currentPipes; // Return pipes unchanged from AI perspective
         });
-        return currentBird;
+        return currentBird; // Return bird unchanged, jump handled above
       });
-    }, 1000 / 25); // 25 FPS for AI decisions - good balance
+    }, 1000 / 25); // AI decision frequency
+    return () => clearInterval(aiLoopInterval);
+  }, [aiMode, gameStarted, gameOver, shouldAIJump]); // Include shouldAIJump
 
-    return () => clearInterval(aiLoop);
-  }, [aiMode, gameStarted, gameOver, shouldAIJump]);
 
   // Collision detection and scoring
   useEffect(() => {
     if (!gameStarted || gameOver) return;
 
     pipes.forEach(pipe => {
-      // Check if bird passed the pipe
       if (!pipe.passed && bird.x > pipe.x + PIPE_WIDTH) {
-        pipe.passed = true;
+        setPipes(prevPipes => prevPipes.map(p => p === pipe ? { ...p, passed: true } : p));
         setScore(prev => prev + 1);
       }
 
-      // Check collision
       if (
-        bird.x + BIRD_SIZE > pipe.x &&
         bird.x < pipe.x + PIPE_WIDTH &&
+        bird.x + BIRD_SIZE > pipe.x &&
         (bird.y < pipe.topHeight || bird.y + BIRD_SIZE > pipe.bottomY)
       ) {
         setGameOver(true);
       }
     });
-  }, [bird, pipes, gameStarted, gameOver]);
+  }, [bird, pipes, gameStarted, gameOver]); // Removed setScore, setPipes from deps to avoid loops if not careful
 
   const startAIMode = () => {
-    setAiMode(true);
-    if (!gameStarted) {
-      setGameStarted(true);
-    }
     if (gameOver) {
       resetGame();
-      setTimeout(() => setGameStarted(true), 100);
+      // Need a slight delay for states to update before starting game
+      setTimeout(() => {
+        setAiMode(true);
+        setGameStarted(true);
+      }, 50);
+    } else {
+      setAiMode(true);
+      if (!gameStarted) {
+        setGameStarted(true);
+      }
+    }
+  };
+  
+  const startManualMode = () => {
+    setAiMode(false);
+    if (gameOver) {
+      resetGame();
+      // No automatic start after reset for manual mode, user needs to jump
+    } else if (!gameStarted) {
+      jump(); // This will set gameStarted to true
     }
   };
 
-  const startManualMode = () => {
-    setAiMode(false);
-    if (!gameStarted) {
-      jump();
-    }
-  };
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-gradient-to-b from-blue-400 to-blue-600">
       <div className="relative">
-        {/* Game Container */}
         <div 
           className="relative bg-gradient-to-b from-cyan-300 to-blue-400 border-4 border-yellow-400 rounded-lg overflow-hidden cursor-pointer"
           style={{ width: GAME_WIDTH, height: GAME_HEIGHT }}
           onClick={!aiMode ? jump : undefined}
         >
-          {/* Background clouds */}
           <div className="absolute inset-0">
             <div className="absolute top-10 left-10 w-16 h-10 bg-white rounded-full opacity-80"></div>
             <div className="absolute top-20 right-20 w-12 h-8 bg-white rounded-full opacity-80"></div>
             <div className="absolute top-32 left-32 w-20 h-12 bg-white rounded-full opacity-80"></div>
           </div>
 
-          {/* Bird */}
           <div
             className={`absolute w-8 h-8 rounded-full border-2 transition-transform duration-75 ${
               aiMode ? 'bg-red-400 border-red-600' : 'bg-yellow-400 border-orange-400'
             }`}
             style={{
+              width: BIRD_SIZE,
+              height: BIRD_SIZE,
               left: bird.x,
               top: bird.y,
               transform: `rotate(${Math.min(Math.max(bird.velocity * 3, -30), 30)}deg)`
             }}
           >
-            {/* Bird eye */}
             <div className="absolute top-1 right-1 w-2 h-2 bg-black rounded-full"></div>
-            {/* Bird beak */}
             <div className={`absolute top-3 -right-1 w-0 h-0 border-l-2 border-t-2 border-t-transparent border-b-2 border-b-transparent ${
               aiMode ? 'border-l-red-700' : 'border-l-orange-500'
             }`}></div>
           </div>
 
-          {/* Pipes */}
           {pipes.map((pipe, index) => (
             <div key={index}>
-              {/* Top pipe */}
               <div
                 className="absolute bg-green-500 border-2 border-green-700"
                 style={{
@@ -336,7 +285,6 @@ function App() {
                 <div className="absolute bottom-0 left-0 right-0 h-8 bg-green-600 border-2 border-green-800"></div>
               </div>
               
-              {/* Bottom pipe */}
               <div
                 className="absolute bg-green-500 border-2 border-green-700"
                 style={{
@@ -351,10 +299,8 @@ function App() {
             </div>
           ))}
 
-          {/* Ground */}
           <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-green-600 to-green-400 border-t-4 border-green-700"></div>
 
-          {/* Score and AI Indicator */}
           <div className="absolute top-4 left-4 text-white text-xl font-bold drop-shadow-lg">
             <div>Score: {score}</div>
             {aiMode && (
@@ -362,7 +308,6 @@ function App() {
             )}
           </div>
 
-          {/* Game Over Screen */}
           {gameOver && (
             <div className="absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center">
               <div className="bg-white p-8 rounded-lg text-center">
@@ -371,8 +316,8 @@ function App() {
                 <div className="space-y-2">
                   <button
                     onClick={() => {
-                      resetGame();
-                      setAiMode(false);
+                      // resetGame(); // startManualMode handles reset
+                      startManualMode();
                     }}
                     className="block w-full bg-blue-500 hover:bg-blue-600 text-white px-6 py-3 rounded-lg font-bold"
                   >
@@ -380,7 +325,7 @@ function App() {
                   </button>
                   <button
                     onClick={() => {
-                      resetGame();
+                      // resetGame(); // startAIMode handles reset
                       startAIMode();
                     }}
                     className="block w-full bg-red-500 hover:bg-red-600 text-white px-6 py-3 rounded-lg font-bold"
@@ -392,7 +337,6 @@ function App() {
             </div>
           )}
 
-          {/* Start Screen */}
           {!gameStarted && !gameOver && (
             <div className="absolute inset-0 bg-black bg-opacity-30 flex items-center justify-center">
               <div className="bg-white p-8 rounded-lg text-center">
@@ -413,7 +357,7 @@ function App() {
                   </button>
                 </div>
                 <p className="text-sm text-gray-600 mt-4">
-                  Manual: Click or press Space to flap
+                  Manual: Click or press Space/↑ to flap
                 </p>
                 <p className="text-xs text-green-600 mt-2">
                   AI: Simple but effective decision making
@@ -423,7 +367,6 @@ function App() {
           )}
         </div>
 
-        {/* Instructions */}
         <div className="mt-4 text-center text-white">
           {aiMode ? (
             <div>
@@ -438,15 +381,16 @@ function App() {
           )}
         </div>
 
-        {/* Mode Toggle */}
         {gameStarted && !gameOver && (
           <div className="mt-4 text-center">
             <button
               onClick={() => {
                 if (aiMode) {
+                  // Switch to manual: reset AI state, game continues if user jumps
                   setAiMode(false);
                 } else {
-                  startAIMode();
+                  // Switch to AI: AI takes over immediately
+                  setAiMode(true);
                 }
               }}
               className={`px-6 py-2 rounded-lg font-bold ${
