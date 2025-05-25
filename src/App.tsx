@@ -18,10 +18,16 @@ const GAME_HEIGHT = 600;
 const GAME_WIDTH = 400;
 const BIRD_SIZE = 25;
 const PIPE_WIDTH = 60;
-const PIPE_GAP = 120;
+const PIPE_GAP = 130;
 const GRAVITY = 0.5;
 const JUMP_FORCE = -7;
 const PIPE_SPEED = 3;
+const MIN_PIPE_Y_MARGIN = 50; // Min space from top/bottom of screen for the pipe body itself,
+                              // ensuring the gap is not right at the edge.
+const MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE = 100; // Max change in topHeight of consecutive pipes.
+                                                 // This limits how much higher or lower the next pipe can be.
+                                                 // Adjust this value to tune difficulty.
+const HORIZONTAL_PIPE_SPACING = 200; // Current logic: new pipe if last pipe x < GAME_WIDTH - 200
 
 function App() {
   const [bird, setBird] = useState<Bird>({ x: 100, y: 300, velocity: 0 });
@@ -153,13 +159,62 @@ function App() {
         // Remove pipes that are off screen
         newPipes = newPipes.filter(pipe => pipe.x > -PIPE_WIDTH);
         
+        setPipes(prevPipes => {
+        let newPipes = prevPipes.map(pipe => ({ ...pipe, x: pipe.x - PIPE_SPEED }));
+        
+        newPipes = newPipes.filter(pipe => pipe.x > -PIPE_WIDTH);
+        
         // Add new pipe if needed
-        if (newPipes.length === 0 || newPipes[newPipes.length - 1].x < GAME_WIDTH - 200) {
-          const topHeight = Math.random() * (GAME_HEIGHT - PIPE_GAP - 100) + 50;
+        if (newPipes.length === 0 || newPipes[newPipes.length - 1].x < GAME_WIDTH - HORIZONTAL_PIPE_SPACING) {
+          let newTopHeight;
+
+          // Define the absolute boundaries for any pipe's topHeight
+          const absoluteMinTopHeight = MIN_PIPE_Y_MARGIN;
+          const absoluteMaxTopHeight = GAME_HEIGHT - PIPE_GAP - MIN_PIPE_Y_MARGIN;
+
+          if (newPipes.length === 0) {
+            // For the first pipe, generate its topHeight randomly within the absolute allowed range.
+            // You might want to bias this towards the center for a gentler start.
+            // Example: const midPoint = (absoluteMinTopHeight + absoluteMaxTopHeight) / 2;
+            // newTopHeight = midPoint + (Math.random() - 0.5) * (absoluteMaxTopHeight - absoluteMinTopHeight) * 0.5; // Center-biased
+            newTopHeight = Math.random() * (absoluteMaxTopHeight - absoluteMinTopHeight) + absoluteMinTopHeight;
+
+          } else {
+            const lastPipe = newPipes[newPipes.length - 1];
+            const lastTopHeight = lastPipe.topHeight;
+
+            // Determine the min/max topHeight for the new pipe based on the last pipe
+            const minNextTopHeightBasedOnLast = lastTopHeight - MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE;
+            const maxNextTopHeightBasedOnLast = lastTopHeight + MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE;
+
+            // The new topHeight must be within BOTH the absolute limits AND the relative limits from the last pipe
+            const effectiveMinTopHeight = Math.max(absoluteMinTopHeight, minNextTopHeightBasedOnLast);
+            const effectiveMaxTopHeight = Math.min(absoluteMaxTopHeight, maxNextTopHeightBasedOnLast);
+            
+            // Generate the new topHeight within the calculated effective range
+            // If effectiveMinTopHeight > effectiveMaxTopHeight (can happen if constraints are very tight,
+            // or MAX_CONSECUTIVE_PIPE_HEIGHT_DIFFERENCE is small and last pipe was at an extreme),
+            // then newTopHeight will be effectively clamped to one of the boundaries.
+            // Math.random() * (negative_number) would be NaN, so ensure the range is non-negative.
+            if (effectiveMinTopHeight >= effectiveMaxTopHeight) {
+                newTopHeight = effectiveMinTopHeight; // Or effectiveMaxTopHeight, they are equal or crossed
+            } else {
+                newTopHeight = Math.random() * (effectiveMaxTopHeight - effectiveMinTopHeight) + effectiveMinTopHeight;
+            }
+          }
+          
+          // Ensure newTopHeight is a valid number (e.g. not NaN if ranges were problematic)
+          // and clamped to the absolute possible values just in case.
+          newTopHeight = Math.max(absoluteMinTopHeight, Math.min(newTopHeight, absoluteMaxTopHeight));
+          if (isNaN(newTopHeight)) { // Fallback if something went wrong
+            newTopHeight = (absoluteMinTopHeight + absoluteMaxTopHeight) / 2;
+          }
+
+
           newPipes.push({
             x: GAME_WIDTH,
-            topHeight,
-            bottomY: topHeight + PIPE_GAP,
+            topHeight: Math.floor(newTopHeight), // Use Math.floor for integer pixel values
+            bottomY: Math.floor(newTopHeight) + PIPE_GAP,
             passed: false
           });
         }
