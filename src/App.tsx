@@ -69,7 +69,7 @@ function App() {
     
     if (!nextPipe) {
       // No pipes ahead - maintain safe height
-      return currentBird.y > GAME_HEIGHT * 0.1;
+      return currentBird.y > GAME_HEIGHT * 0.2;
     }
 
     const distanceToPipe = nextPipe.x - currentBird.x;
