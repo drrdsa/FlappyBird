@@ -16,7 +16,7 @@ interface Pipe {
 
 const GAME_HEIGHT = 600;
 const GAME_WIDTH = 400;
-const BIRD_SIZE = 50; // Assuming bird is roughly square, adjust if using w/h from styles
+const BIRD_SIZE = 35; // Assuming bird is roughly square, adjust if using w/h from styles
 const PIPE_WIDTH = 60;
 const PIPE_GAP = 130;
 const GRAVITY = 0.5;
